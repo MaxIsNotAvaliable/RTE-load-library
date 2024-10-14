@@ -521,14 +521,17 @@
     <ClInclude Include="additional dependencies\minhook\trampoline.h" />
     <ClInclude Include="additional dependencies\render\drawing.h" />
     <ClInclude Include="additional dependencies\resources\resources.h" />
+    <ClInclude Include="additional dependencies\StringUtils.h" />
     <ClInclude Include="additional dependencies\win.h" />
     <ClInclude Include="source\dnd.h" />
     <ClInclude Include="source\gui\crender.h" />
+    <ClInclude Include="source\gui\dialogs.h" />
     <ClInclude Include="source\injector\GetProcAddress.h" />
     <ClInclude Include="source\injector\injector.h" />
     <ClInclude Include="source\injector\ProcessManager.h" />
     <ClInclude Include="source\injector\ptinfo.h" />
     <ClInclude Include="source\injector\RTEHijacker.h" />
+    <ClInclude Include="source\inject_target.h" />
   </ItemGroup>
   <ItemGroup>
     <None Include="additional dependencies\glm\detail\func_common.inl" />

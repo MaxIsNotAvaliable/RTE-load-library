@@ -10,12 +10,16 @@
 #include <files_helper/files.h>
 #include "../injector/GetProcAddress.h"
 #include "../injector/ProcessManager.h"
+#include "../inject_target.h"
+
+#include "dialogs.h"
 
 #include <windows.h>
 #include <commdlg.h>
 #include <tchar.h>
 #include <stdio.h>
 #include <psapi.h>
+
 
 static int currentTabId = 0;
 static int nextTabId = currentTabId;
@@ -66,7 +70,7 @@ void CRenderApp::RenderBody(const HWND& window)
 		if (dnd_value > 0)
 		{
 			ImGui::PushStyleVar(ImGuiStyleVar_Alpha, animationValue * dnd_value);
-			ImDrawList* drawList = ImGui::GetWindowDrawList();
+			ImDrawList* drawList = ImGui::GetForegroundDrawList();
 
 			{
 				constexpr ImVec2 dndsize = ImVec2(240, 88);
@@ -81,7 +85,7 @@ void CRenderApp::RenderBody(const HWND& window)
 				ImGui::PopFont();
 				ImGui::PushFont(fonts::bold_20);
 				drawList->AddText(deltaPos + ImVec2(0, ImGui::GetFontSize() + style->FramePadding.y), ImGui::GetColorU32(colors::white), "any .dll file here");
-				auto fileList = pDropTarget->GetFiles();
+				auto fileList = pDropTarget->GetDragFiles();
 				for (size_t i = 0; i < fileList.size(); i++)
 				{
 					drawList->AddText(deltaPos + ImVec2(0, ImGui::GetFontSize() * (i + 2) + style->FramePadding.y), ImGui::GetColorU32(colors::white), fileList[i].filename().string().c_str());
@@ -122,7 +126,7 @@ void CRenderApp::RenderBody(const HWND& window)
 
 		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(16, 16));
 
-		ImGui::BeginChild(ENCSTR("TitleChild"), ImVec2(0, tools::CalcChildSize().y - 140), 0, ImGuiWindowFlags_AlwaysUseWindowPadding);
+		ImGui::BeginChild(ENCSTR("TitleChild"), ImVec2(0, 0), 0, ImGuiWindowFlags_AlwaysUseWindowPadding);
 		{
 			/*ImGui::PushFont(fonts::bold_28);*/
 
@@ -133,302 +137,397 @@ void CRenderApp::RenderBody(const HWND& window)
 			//ImGui::Text(ENCSTR("RTE-load-library"));
 
 			//ImGui::PopFont();
-			
-			ImGui::BeginChild("ProcessSelectChild", ImVec2(ImGui::GetContentRegionAvail().x / 2, 0));
+
+			ImGui::PushStyleColor(ImGuiCol_ChildBg, colors::backgroundPopUp);
+			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
+			ImGui::BeginChild("ProcessSelectChild", ImVec2(ImGui::GetContentRegionAvail().x * 0.75f, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
 			{
-				ImGui::Text("Select process");
-				static char buf[0x100];
-				ImGui::InputText("##searchByName", buf, sizeof(buf));
-				ImGui::BeginChild("ProcessesChild");
+				ImGui::Text("Select dll file");
+				ImGui::InputText("##dllFilenamePath", InjectTarget::filePath, sizeof(InjectTarget::filePath));
+				ImGui::SameLine();
+				if (ImGui::Button(ENCSTR("Open")))
 				{
-					static int counter = 0;
-					if (++counter % 100 == 0)
-						CProcessManager::UpdateProcessList();
-					auto procList = CProcessManager::GetProcessList(buf);
+					sprintf_s(InjectTarget::filePath, "%s", FileDialog::Open().c_str());
+				}
+
+				ImGui::Text(ENCSTR("Select process"));
+				static char bufProc[0x100];
+				ImGui::InputText(ENCSTR("##searchByName"), bufProc, sizeof(bufProc));
+				
+				ImGui::BeginChild(ENCSTR("ProcessesChild"));
+				{
+					auto procList = CProcessManager::GetProcessList(bufProc);
 					static DWORD targetPid = 0;
+					ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
 					for (size_t i = 0; i < procList.size(); i++)
 					{
 						EString estr = "[" + EString((int)procList[i].pid) + "] " + procList[i].processName;
+
+						bool isPushStyle = procList[i].pid == targetPid;
+
+						if (isPushStyle)
+							ImGui::PushStyleColor(ImGuiCol_Button, colors::background* colors::lighter);
 						
-						if (ImGui::RadioButton(estr.c_str(), procList[i].pid == targetPid))
+						if (ImGui::Button(estr.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
 						{
 							targetPid = procList[i].pid;
+							InjectTarget::pid = targetPid;
 						}
+
+						if (isPushStyle)
+							ImGui::PopStyleColor();
 					}
+					ImGui::PopStyleVar();
 				}
 				ImGui::EndChild();
+				
 			}
 			ImGui::EndChild();
+			ImGui::PopStyleVar();
+
+			ImGui::PopStyleColor();
+
 
 			ImGui::SameLine();
 
 			ImGui::BeginChild("DllFileSelectChild");
 			{
-				ImGui::Text("Select dll file");
-				static char buf[0x100];
-				ImGui::InputText("##dllFilenamePath", buf, sizeof(buf));
-				ImGui::SameLine();
-				ImGui::Button("Open");
+				//ImGui::Text("Loading result:");
+
+				static bool waitingToClose = false;
+				static int lastId = -1;
+				if (lastId != InjectQueueHandler::GetLastId())
+				{
+					lastId = InjectQueueHandler::GetLastId();
+					items::OpenNotify(ENCSTR("Client load"));
+					waitingToClose = true;
+				}
+				if (waitingToClose)
+				{
+					int resultCode = 0;
+					bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
+
+					EString text = finished ? (resultCode == 0 ?
+						ENCSTR("Client loaded successfully!\n ") :
+						EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
+
+					auto lmFn = [&]()
+						{
+							bool pressed = false;
+							if (ImGui::Button(ENCSTR("OK"), ImVec2(120, 0)) && finished)
+							{
+								ImGui::CloseCurrentPopup();
+								pressed = true;
+							}
+
+							ImGui::SetItemDefaultFocus();
+							ImGui::SameLine();
+
+							if (ImGui::Button(ENCSTR("Close"), ImVec2(120, 0)) && finished)
+							{
+								ImGui::CloseCurrentPopup();
+								pressed = true;
+							}
+							return false;
+						};
+
+					//if (items::ShowNotify("Client load", text.c_str()))
+					if (items::ShowNotifyLm(ENCSTR("Client load"), text.c_str(), lmFn))
+					{
+						waitingToClose = false;
+					}
+				}
+
+
+				//int resultCode = 0;
+				//bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
+
+				//EString injectText = finished ? (resultCode == 0 ?
+				//ENCSTR("Client loaded successfully!\n ") :
+				//EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
+
+				//if (waitingToClose)
+					//ImGui::Text(injectText.c_str());
+				//else
+				//	ImGui::Text(ENCSTR("Wait for load..."));
+
+				ImGui::Text("DLL:\n%s", strlen(InjectTarget::filePath) == 0 ? "Not selected" : std::filesystem::path(InjectTarget::filePath).filename().string().c_str());
+				ImGui::NewLine();
+
+				ImGui::Text("PID:\n%i", InjectTarget::pid);
+				ImGui::NewLine();
+
+				std::string procName = CProcessManager::GetProcessByPid(InjectTarget::pid).processName;
+				ImGui::Text("Name:\n%s", procName.length() == 0 ? "None" : procName.c_str());
+
+				ImGui::PushFont(fonts::bold_20);
+				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetContentRegionAvail().y - 54);
+				bool loadClientClick = ImGui::Button(ENCSTR("LOAD"), ImVec2(ImGui::GetContentRegionAvail().x, 54));
+				if (loadClientClick)
+				{
+					InjectQueueHandler::AddToQueue(InjectTarget::pid, InjectTarget::filePath);
+				}
+				ImGui::PopFont();
 			}
 			ImGui::EndChild();
 		}
 		ImGui::EndChild();
 
 		ImGui::PushStyleColor(ImGuiCol_ChildBg, ImVec4(0.03f, 0.03f, 0.03f, 0.4f));
-		ImGui::BeginChild(ENCSTR("footerChild"), ImVec2(), 0, ImGuiWindowFlags_AlwaysUseWindowPadding);
-		{
-			ImGui::PushStyleColor(ImGuiCol_Button, colors::active);
-			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::active * colors::darker * colors::darker);
-			ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::active * colors::darker);
+		//ImGui::BeginChild(ENCSTR("footerChild"), ImVec2(), 0, ImGuiWindowFlags_AlwaysUseWindowPadding);
+		//{
+		//	ImGui::PushStyleColor(ImGuiCol_Button, colors::active);
+		//	ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::active * colors::darker * colors::darker);
+		//	ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::active * colors::darker);
 
-			auto GetMinecraftPID = []()
-				{
-					HWND hWnd = FindWindowA(ENCSTR("LWJGL"), nullptr);
-					if (!hWnd)
-						hWnd = FindWindowA(ENCSTR("GLFW30"), nullptr);
+		//	auto GetMinecraftPID = []()
+		//		{
+		//			HWND hWnd = FindWindowA(ENCSTR("LWJGL"), nullptr);
+		//			if (!hWnd)
+		//				hWnd = FindWindowA(ENCSTR("GLFW30"), nullptr);
 
-					DWORD PID = 0;
-					GetWindowThreadProcessId(hWnd, &PID);
+		//			DWORD PID = 0;
+		//			GetWindowThreadProcessId(hWnd, &PID);
 
-					return PID;
-				};
+		//			return PID;
+		//		};
 
-			ImGui::PushFont(fonts::bold_20);
-			bool loadClientClick = ImGui::Button(ENCSTR("LOAD CLIENT"), ImVec2(186, 54));
-			ImGui::PopFont();
+		//	ImGui::PushFont(fonts::bold_20);
+		//	bool loadClientClick = ImGui::Button(ENCSTR("LOAD CLIENT"), ImVec2(186, 54));
+		//	ImGui::PopFont();
 
-			if (loadClientClick)
-			{
-				DWORD targetPID = GetMinecraftPID();
-				HMODULE hMods[1024];
-				DWORD cbNeeded;
+		//	if (loadClientClick)
+		//	{
+		//		DWORD targetPID = GetMinecraftPID();
+		//		HMODULE hMods[1024];
+		//		DWORD cbNeeded;
 
-				InjectQueueHandler::AddToQueue(targetPID, ENCSTR("sc_proj.dll"));
-			}
+		//		InjectQueueHandler::AddToQueue(targetPID, ENCSTR("sc_proj.dll"));
+		//	}
 
-			static bool waitingToClose = false;
-			static int lastId = -1;
-			if (lastId != InjectQueueHandler::GetLastId())
-			{
-				lastId = InjectQueueHandler::GetLastId();
-				items::OpenNotify(ENCSTR("Client load"));
-				waitingToClose = true;
-			}
-			if (waitingToClose)
-			{
-				int resultCode = 0;
-				bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
+		//	static bool waitingToClose = false;
+		//	static int lastId = -1;
+		//	if (lastId != InjectQueueHandler::GetLastId())
+		//	{
+		//		lastId = InjectQueueHandler::GetLastId();
+		//		items::OpenNotify(ENCSTR("Client load"));
+		//		waitingToClose = true;
+		//	}
+		//	if (waitingToClose)
+		//	{
+		//		int resultCode = 0;
+		//		bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
 
-				EString text = finished ? (resultCode == 0 ?
-					ENCSTR("Client loaded successfully!\n ") :
-					EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
+		//		EString text = finished ? (resultCode == 0 ?
+		//			ENCSTR("Client loaded successfully!\n ") :
+		//			EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
 
-				auto lmFn = [&]()
-					{
-						bool pressed = false;
-						if (ImGui::Button(ENCSTR("OK"), ImVec2(120, 0)) && finished)
-						{
-							ImGui::CloseCurrentPopup();
-							pressed = true;
-						}
+		//		auto lmFn = [&]()
+		//			{
+		//				bool pressed = false;
+		//				if (ImGui::Button(ENCSTR("OK"), ImVec2(120, 0)) && finished)
+		//				{
+		//					ImGui::CloseCurrentPopup();
+		//					pressed = true;
+		//				}
 
-						ImGui::SetItemDefaultFocus();
-						ImGui::SameLine();
+		//				ImGui::SetItemDefaultFocus();
+		//				ImGui::SameLine();
 
-						if (ImGui::Button(ENCSTR("Close"), ImVec2(120, 0)) && finished)
-						{
-							ImGui::CloseCurrentPopup();
-							pressed = true;
-						}
-						return false;
-					};
+		//				if (ImGui::Button(ENCSTR("Close"), ImVec2(120, 0)) && finished)
+		//				{
+		//					ImGui::CloseCurrentPopup();
+		//					pressed = true;
+		//				}
+		//				return false;
+		//			};
 
-				//if (items::ShowNotify("Client load", text.c_str()))
-				if (items::ShowNotifyLm(ENCSTR("Client load"), text.c_str(), lmFn))
-				{
-					waitingToClose = false;
-				}
-			}
-
-
+		//		//if (items::ShowNotify("Client load", text.c_str()))
+		//		if (items::ShowNotifyLm(ENCSTR("Client load"), text.c_str(), lmFn))
+		//		{
+		//			waitingToClose = false;
+		//		}
+		//	}
 
 
 
-			ImGui::SameLine();
-
-			ImVec2 timerChildSize = ImVec2(256, 50);
-			ImGui::SetCursorPos(ImVec2(ImGui::GetWindowSize().x - timerChildSize.x - style->WindowPadding.x, ImGui::GetCursorPosY() + 2));
-			ImGui::BeginChild(ENCSTR("timerChild"), timerChildSize);
-			{
-				constexpr float clockRadius = 13;
-				float parentPadding = (style->WindowPadding.x + style->FramePadding.x) / 2;
-				ImVec2 clockPos = ImVec2(clockRadius + ImGui::GetCursorPosX() + parentPadding, ImGui::GetWindowHeight() / 2);
-				float clockTime = 0.84f;
-
-				static Animation clockAnim = Animation(Animation::forward, 30);
-				clockAnim.Proceed();
-
-				if (clockAnim.AnimationEnded())
-				{
-					clockAnim.Reverse();
-					if (clockAnim.GetState() == clockAnim.forward)
-					{
-						clockAnim.SetDuration(3);
-					}
-					else
-					{
-						clockAnim.SetDuration(30);
-					}
-				}
-
-				draw::Clock(clockPos, clockAnim.GetValueSin(), clockRadius, 3.5f);
-
-				float fontSize = ImGui::GetFontSize();
-				ImGui::SetCursorPos(ImVec2(clockPos.x + clockRadius + style->FramePadding.x, (timerChildSize.y - fontSize * 2) / 2));
-
-				int days = 19;
-				int hours = 14;
-				int minutes = 51;
-				ImGui::Text(ENCSTR("Time left: %i days\n%i hours %i minutes"), days, hours, minutes);
-				ImGui::SameLine();
-
-				ImGui::PushFont(fonts::bold_16);
-
-				ImVec2 btnSize = tools::CalcItemSize(ENCSTR("BUY"));
-				ImGui::SetCursorPos(ImVec2(timerChildSize.x - btnSize.x - parentPadding, (timerChildSize.y - btnSize.y) / 2));
-
-				bool buyClientClick = ImGui::Button(ENCSTR("BUY"), btnSize);
-				ImGui::PopFont();
-
-				if (buyClientClick)
-				{
-					items::OpenNotify(ENCSTR("Buy subscription"));
-				}
-
-				items::ShowNotify(ENCSTR("Buy subscription"), ENCSTR("Buy what? noob"));
-
-			}
-			ImGui::EndChild();
-
-			ImGui::PopStyleColor(3); // button colors
-
-			ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (style->WindowPadding.y + style->FramePadding.y) / 2);
-
-			ImGui::BeginChild("footerFooterPanel");
-			{
-				ImVec2 panelSize = ImGui::GetWindowSize();
-				ImVec2 newBtnSize = ImVec2(0, panelSize.y);
-				ImGui::PushStyleColor(ImGuiCol_Text, colors::text * ImVec4(1, 1, 1, 0.5f));
-
-				ImGui::PushStyleColor(ImGuiCol_Button, colors::transparent);
-				ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::transparent);
-				ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::transparent);
-
-				static std::vector<const char*> btns = {
-					"Check for updates",
-					"Official site",
-					"Subscription",
-					"Settings"
-				};
-				static int hoveredId = -1;
-				bool isHovered = false;
-				for (size_t i = 0; i < btns.size(); i++)
-				{
-					if (i) ImGui::SameLine();
-
-					if (i == btns.size() - 1)
-					{
-						ImGui::SetCursorPosX(panelSize.x - tools::CalcItemSize(btns[i]).x);
-					}
-
-					bool clicked = false;
-					if (i == hoveredId)
-					{
-						ImGui::PushStyleColor(ImGuiCol_Text, colors::text);
-						clicked |= ImGui::Button(btns[i], newBtnSize);
-						ImGui::PopStyleColor();
-					}
-					else
-					{
-						clicked |= ImGui::Button(btns[i], newBtnSize);
-					}
-
-					if (clicked)
-					{
-						items::OpenNotify(btns[i]);
-					}
-
-					if (ImGui::IsItemHovered())
-					{
-						isHovered = true;
-						hoveredId = i;
-					}
-				}
-				if (!isHovered) hoveredId = -1;
 
 
-				ImGui::PopStyleColor(3);
-				ImGui::PopStyleColor();
+		//	ImGui::SameLine();
 
-				items::ShowNotify("Check for updates", "You using newest version of client");
-				items::ShowNotify("Official site", "Open www.google.com?");
-				items::ShowNotify("Subscription", "Open www.google.com/subscriptions?");
+		//	ImVec2 timerChildSize = ImVec2(256, 50);
+		//	ImGui::SetCursorPos(ImVec2(ImGui::GetWindowSize().x - timerChildSize.x - style->WindowPadding.x, ImGui::GetCursorPosY() + 2));
+		//	ImGui::BeginChild(ENCSTR("timerChild"), timerChildSize);
+		//	{
+		//		constexpr float clockRadius = 13;
+		//		float parentPadding = (style->WindowPadding.x + style->FramePadding.x) / 2;
+		//		ImVec2 clockPos = ImVec2(clockRadius + ImGui::GetCursorPosX() + parentPadding, ImGui::GetWindowHeight() / 2);
+		//		float clockTime = 0.84f;
 
-				auto lmSettings = [&]()->bool
-					{
-						ImVec2 settingsSize = ImVec2(200, 150);
-						ImGui::BeginChild("Settings", settingsSize);
-						{
-							bool loggedIn = true;
+		//		static Animation clockAnim = Animation(Animation::forward, 30);
+		//		clockAnim.Proceed();
 
-							ImGui::PushStyleColor(ImGuiCol_ChildBg, colors::transparent);
-							ImGui::BeginChild("innersettings");
+		//		if (clockAnim.AnimationEnded())
+		//		{
+		//			clockAnim.Reverse();
+		//			if (clockAnim.GetState() == clockAnim.forward)
+		//			{
+		//				clockAnim.SetDuration(3);
+		//			}
+		//			else
+		//			{
+		//				clockAnim.SetDuration(30);
+		//			}
+		//		}
 
-							if (loggedIn)
-							{
-								float winWidth = ImGui::GetWindowWidth();
+		//		draw::Clock(clockPos, clockAnim.GetValueSin(), clockRadius, 3.5f);
 
-								float ts = 0;
+		//		float fontSize = ImGui::GetFontSize();
+		//		ImGui::SetCursorPos(ImVec2(clockPos.x + clockRadius + style->FramePadding.x, (timerChildSize.y - fontSize * 2) / 2));
 
-								EString loginStr = "Login: ABOBA_USER";
-								ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(loginStr.c_str()).x) / 2);
-								ImGui::Text(loginStr.c_str());
+		//		int days = 19;
+		//		int hours = 14;
+		//		int minutes = 51;
+		//		ImGui::Text(ENCSTR("Time left: %i days\n%i hours %i minutes"), days, hours, minutes);
+		//		ImGui::SameLine();
 
-								EString passStr = "Password: *****";
-								ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(passStr.c_str()).x) / 2);
-								ImGui::Text(passStr.c_str());
+		//		ImGui::PushFont(fonts::bold_16);
 
-								EString sidStr = "SID: Valid";
-								ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(sidStr.c_str()).x) / 2);
-								ImGui::Text(sidStr.c_str());
+		//		ImVec2 btnSize = tools::CalcItemSize(ENCSTR("BUY"));
+		//		ImGui::SetCursorPos(ImVec2(timerChildSize.x - btnSize.x - parentPadding, (timerChildSize.y - btnSize.y) / 2));
 
-								EString logoutBtnStr = "Logout";
-								ImGui::SetCursorPosX((winWidth - tools::CalcItemSize(logoutBtnStr.c_str()).x) / 2);
-								ImGui::Button("Logout");
-							}
-							else
-							{
-								ImGui::Button("gay");
-							}
+		//		bool buyClientClick = ImGui::Button(ENCSTR("BUY"), btnSize);
+		//		ImGui::PopFont();
 
-							ImGui::EndChild();
-							ImGui::PopStyleColor();
-						}
-						ImGui::EndChild();
+		//		if (buyClientClick)
+		//		{
+		//			items::OpenNotify(ENCSTR("Buy subscription"));
+		//		}
 
-						if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
-						return false;
-					};
+		//		items::ShowNotify(ENCSTR("Buy subscription"), ENCSTR("Buy what? noob"));
 
-				items::ShowNotifyLm("Settings", "Account parameters", lmSettings);
+		//	}
+		//	ImGui::EndChild();
 
-			}
-			ImGui::EndChild();
+		//	ImGui::PopStyleColor(3); // button colors
+
+		//	ImGui::SetCursorPosY(ImGui::GetCursorPosY() + (style->WindowPadding.y + style->FramePadding.y) / 2);
+
+		//	ImGui::BeginChild("footerFooterPanel");
+		//	{
+		//		ImVec2 panelSize = ImGui::GetWindowSize();
+		//		ImVec2 newBtnSize = ImVec2(0, panelSize.y);
+		//		ImGui::PushStyleColor(ImGuiCol_Text, colors::text * ImVec4(1, 1, 1, 0.5f));
+
+		//		ImGui::PushStyleColor(ImGuiCol_Button, colors::transparent);
+		//		ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::transparent);
+		//		ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::transparent);
+
+		//		static std::vector<const char*> btns = {
+		//			"Check for updates",
+		//			"Official site",
+		//			"Subscription",
+		//			"Settings"
+		//		};
+		//		static int hoveredId = -1;
+		//		bool isHovered = false;
+		//		for (size_t i = 0; i < btns.size(); i++)
+		//		{
+		//			if (i) ImGui::SameLine();
+
+		//			if (i == btns.size() - 1)
+		//			{
+		//				ImGui::SetCursorPosX(panelSize.x - tools::CalcItemSize(btns[i]).x);
+		//			}
+
+		//			bool clicked = false;
+		//			if (i == hoveredId)
+		//			{
+		//				ImGui::PushStyleColor(ImGuiCol_Text, colors::text);
+		//				clicked |= ImGui::Button(btns[i], newBtnSize);
+		//				ImGui::PopStyleColor();
+		//			}
+		//			else
+		//			{
+		//				clicked |= ImGui::Button(btns[i], newBtnSize);
+		//			}
+
+		//			if (clicked)
+		//			{
+		//				items::OpenNotify(btns[i]);
+		//			}
+
+		//			if (ImGui::IsItemHovered())
+		//			{
+		//				isHovered = true;
+		//				hoveredId = i;
+		//			}
+		//		}
+		//		if (!isHovered) hoveredId = -1;
+
+
+		//		ImGui::PopStyleColor(3);
+		//		ImGui::PopStyleColor();
+
+		//		items::ShowNotify("Check for updates", "You using newest version of client");
+		//		items::ShowNotify("Official site", "Open www.google.com?");
+		//		items::ShowNotify("Subscription", "Open www.google.com/subscriptions?");
+
+		//		auto lmSettings = [&]()->bool
+		//			{
+		//				ImVec2 settingsSize = ImVec2(200, 150);
+		//				ImGui::BeginChild("Settings", settingsSize);
+		//				{
+		//					bool loggedIn = true;
+
+		//					ImGui::PushStyleColor(ImGuiCol_ChildBg, colors::transparent);
+		//					ImGui::BeginChild("innersettings");
+
+		//					if (loggedIn)
+		//					{
+		//						float winWidth = ImGui::GetWindowWidth();
+
+		//						float ts = 0;
+
+		//						EString loginStr = "Login: ABOBA_USER";
+		//						ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(loginStr.c_str()).x) / 2);
+		//						ImGui::Text(loginStr.c_str());
+
+		//						EString passStr = "Password: *****";
+		//						ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(passStr.c_str()).x) / 2);
+		//						ImGui::Text(passStr.c_str());
+
+		//						EString sidStr = "SID: Valid";
+		//						ImGui::SetCursorPosX((winWidth - ImGui::CalcTextSize(sidStr.c_str()).x) / 2);
+		//						ImGui::Text(sidStr.c_str());
+
+		//						EString logoutBtnStr = "Logout";
+		//						ImGui::SetCursorPosX((winWidth - tools::CalcItemSize(logoutBtnStr.c_str()).x) / 2);
+		//						ImGui::Button("Logout");
+		//					}
+		//					else
+		//					{
+		//						ImGui::Button("gay");
+		//					}
+
+		//					ImGui::EndChild();
+		//					ImGui::PopStyleColor();
+		//				}
+		//				ImGui::EndChild();
+
+		//				if (ImGui::Button("Close")) ImGui::CloseCurrentPopup();
+		//				return false;
+		//			};
+
+		//		items::ShowNotifyLm("Settings", "Account parameters", lmSettings);
+
+		//	}
+		//	ImGui::EndChild();
 
 
 
-		}
-		ImGui::EndChild();
+		//}
+		//ImGui::EndChild();
 		ImGui::PopStyleColor();
 
 		ImGui::PopStyleVar();

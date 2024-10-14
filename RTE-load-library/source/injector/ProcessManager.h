@@ -15,5 +15,6 @@ private:
 public:
 	static void UpdateProcessList();
 	static std::vector<ProcessInfo_t> GetProcessList(const std::string& filterByName = "\0");
+	static ProcessInfo_t GetProcessByPid(DWORD pid);
 };
 

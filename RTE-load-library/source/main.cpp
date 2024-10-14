@@ -20,7 +20,7 @@
 #include <future>
 
 #include <gdiplus.h>
-#include <shobjidl.h>
+#include "injector/ProcessManager.h"
 
 
 HWND window = NULL;
@@ -29,20 +29,6 @@ static CRenderApp render;
 static bool finished = false;
 
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
-
-
-
-void HandleFiles(HDROP hDrop) {
-    TCHAR szName[MAX_PATH];
-    UINT count = DragQueryFile(hDrop, 0xFFFFFFFF, NULL, 0);
-
-    for (UINT i = 0; i < count; i++) {
-        DragQueryFile(hDrop, i, szName, MAX_PATH);
-        MessageBox(NULL, szName, "File Dropped", MB_OK); 
-    }
-    DragFinish(hDrop);
-}
 
 LRESULT CALLBACK WndProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
 {
@@ -59,10 +45,6 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT uMessage, WPARAM wParam, LPARAM lParam)
         if ((wParam & 0xFFF0) == SC_KEYMENU)
             return 0L;
         break;
-
-    //case WM_DROPFILES:
-    //    HandleFiles((HDROP)wParam);
-    //    break;
 
     case WM_DESTROY:
         PostQuitMessage(NULL);
@@ -176,33 +158,12 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 {
     CoInitialize(NULL);
 
-    IFileOpenDialog* pFileOpen;
-    HRESULT hr = CoCreateInstance(CLSID_FileOpenDialog, NULL, CLSCTX_ALL,
-        IID_IFileOpenDialog, reinterpret_cast<void**>(&pFileOpen));
-
-    if (SUCCEEDED(hr)) {
-        hr = pFileOpen->Show(NULL);
-        if (SUCCEEDED(hr)) {
-            IShellItem* pItem;
-            hr = pFileOpen->GetResult(&pItem);
-            if (SUCCEEDED(hr)) {
-                PWSTR pszFilePath;
-                hr = pItem->GetDisplayName(SIGDN_FILESYSPATH, &pszFilePath);
-                MessageBoxW(NULL, pszFilePath, L"Selected File", MB_OK);
-                CoTaskMemFree(pszFilePath);
-                pItem->Release();
-            }
-        }
-        pFileOpen->Release();
-    }
-
-    CoUninitialize();
-
-
-    auto injectorQueue = [&]()
+    auto fnAdditionalThread = [&]()
         {
             while (!finished)
             {
+                CProcessManager::UpdateProcessList();
+
                 int result;
                 int id = InjectQueueHandler::Execute(result);
                 if (id >= 0)
@@ -215,13 +176,15 @@ int WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int n
 
 
     std::thread thWin(InitializeWindow, hInstance, nShowCmd);
-    std::thread thInj(injectorQueue);
+    std::thread thExtra(fnAdditionalThread);
 
     thWin.join();
-    thInj.join();
+    thExtra.join();
 
     if (window != NULL)
         RevokeDragDrop(window);
+
+    CoUninitialize();
 
     return EXIT_SUCCESS;
 }

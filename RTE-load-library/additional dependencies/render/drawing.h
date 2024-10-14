@@ -39,6 +39,10 @@ struct fonts
 struct colors
 {
 	static constexpr ImVec4 darker = ImVec4(0.9f, 0.9f, 0.9f, 1);
+	static constexpr ImVec4 lighter = ImVec4(1.1f, 1.1f, 1.1f, 1);
+	static constexpr ImVec4 moreOpaque = ImVec4(1.f, 1.f, 1.f, 1.1f);
+	static constexpr ImVec4 lessOpaque = ImVec4(1.f, 1.f, 1.f, 0.9f);
+
 	static constexpr ImVec4 active = ImVec4(0.41f, 0.6f, 0.9f, 1);
 	static constexpr ImVec4 activeDark = ImVec4(0.1f, 0.17f, 0.27f, 1);
 	static constexpr ImVec4 white = ImVec4(1, 1, 1, 1);

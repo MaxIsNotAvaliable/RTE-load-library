@@ -21,6 +21,7 @@ void CProcessManager::UpdateProcessList()
     do {
         ProcessInfo_t pi;
         pi.pid = pe32.th32ProcessID;
+        if (pi.pid < 1) continue;
         pi.processName = pe32.szExeFile;
         processes.push_back(pi);
     } while (Process32Next(hProcessSnap, &pe32));
@@ -44,4 +45,37 @@ std::vector<ProcessInfo_t> CProcessManager::GetProcessList(const std::string& fi
     std::copy_if(processList.begin(), processList.end(), std::back_inserter(filteredProcesses), lmFilter);
 
 	return filteredProcesses;
+}
+
+ProcessInfo_t CProcessManager::GetProcessByPid(DWORD pid)
+{
+    /*size_t left, right, mid = 0;
+
+    left = 0;
+    right = processList.size() + 1;
+    
+    while (left != right)
+    {
+        mid = (right + left) / 2;
+        if (processList[mid].pid > pid)
+        {
+            right = mid;
+        }
+        else if (processList[mid].pid < pid)
+        {
+            left = mid + 1;
+        }
+        else
+        {
+            return processList[mid];
+        }
+    }*/
+
+    for (size_t i = 0; i < processList.size(); i++)
+    {
+        if (processList[i].pid == pid)
+            return processList[i];
+    }
+
+    return ProcessInfo_t();
 }

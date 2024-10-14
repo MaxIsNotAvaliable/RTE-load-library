@@ -3,6 +3,8 @@
 #include <vector>
 #include <filesystem>
 
+#include "inject_target.h"
+
 enum DragStatus : int
 {
     DragStatus_none = 0x00,
@@ -15,10 +17,12 @@ enum DragStatus : int
 class DropTarget : public IDropTarget 
 {
 private:
-    std::vector<std::filesystem::path> m_files;
+    std::vector<std::filesystem::path> m_droppedfiles;
+    std::vector<std::filesystem::path> m_draggedFiles;
 
 public:
-    std::vector<std::filesystem::path> GetFiles();
+    std::vector<std::filesystem::path> GetDroppedFiles();
+    std::vector<std::filesystem::path> GetDragFiles();
 
     DragStatus dragStatus;
 

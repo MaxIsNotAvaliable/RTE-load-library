@@ -5,6 +5,8 @@
 #include <string>
 #include <sstream>
 
+#include "StringUtils.h"
+
 #include "math/vectors.h"
 
 enum GuessedType : short
