@@ -1,6 +1,15 @@
 #include "ProcessManager.h"
 #include <tlhelp32.h>
 
+bool IsProcess64Bit(HANDLE hProcess) {
+    BOOL isWow64 = FALSE;
+    if (IsWow64Process(hProcess, &isWow64)) {
+        return !isWow64;
+    }
+    return false;
+}
+
+
 void CProcessManager::UpdateProcessList()
 {
     HANDLE hProcessSnap = CreateToolhelp32Snapshot(TH32CS_SNAPALL, 0);
@@ -23,6 +32,18 @@ void CProcessManager::UpdateProcessList()
         pi.pid = pe32.th32ProcessID;
         if (pi.pid < 1) continue;
         pi.processName = pe32.szExeFile;
+
+        HANDLE hProcess = OpenProcess(PROCESS_QUERY_INFORMATION | PROCESS_VM_READ, FALSE, pi.pid);
+        if (hProcess) 
+        {
+            pi.arch = IsProcess64Bit(hProcess) ? ARCH_x64 : ARCH_x86;
+            CloseHandle(hProcess);
+        }
+        else 
+        {
+            pi.arch = ARCH_UNKNOWN;
+        }
+
         processes.push_back(pi);
     } while (Process32Next(hProcessSnap, &pe32));
 

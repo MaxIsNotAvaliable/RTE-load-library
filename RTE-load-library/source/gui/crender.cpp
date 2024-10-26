@@ -55,7 +55,11 @@ void CRenderApp::RenderBody(const HWND& window)
 
 		//ImGui::Text(ENCSTR("RTE-load-library"));
 		ImGui::BeginDisabled();
-		ImGui::Button(ENCSTR("RTE-load-library"));
+#ifdef _WIN64
+		ImGui::Button(ENCSTR("RTE-load-library x64"));
+#else
+		ImGui::Button(ENCSTR("RTE-load-library x86"));
+#endif
 		ImGui::EndDisabled();
 
 		ImGui::SameLine();
@@ -140,10 +144,10 @@ void CRenderApp::RenderBody(const HWND& window)
 
 			ImGui::PushStyleColor(ImGuiCol_ChildBg, colors::backgroundPopUp);
 			ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(10, 10));
-			ImGui::BeginChild("ProcessSelectChild", ImVec2(ImGui::GetContentRegionAvail().x * 0.75f, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
+			ImGui::BeginChild(ENCSTR("ProcessSelectChild"), ImVec2(ImGui::GetContentRegionAvail().x * 0.777f, 0), ImGuiChildFlags_AlwaysUseWindowPadding);
 			{
-				ImGui::Text("Select dll file");
-				ImGui::InputText("##dllFilenamePath", InjectTarget::filePath, sizeof(InjectTarget::filePath));
+				ImGui::Text(ENCSTR("Select dll file"));
+				ImGui::InputText(ENCSTR("##dllFilenamePath"), InjectTarget::filePath, sizeof(InjectTarget::filePath));
 				ImGui::SameLine();
 				if (ImGui::Button(ENCSTR("Open")))
 				{
@@ -153,6 +157,52 @@ void CRenderApp::RenderBody(const HWND& window)
 				ImGui::Text(ENCSTR("Select process"));
 				static char bufProc[0x100];
 				ImGui::InputText(ENCSTR("##searchByName"), bufProc, sizeof(bufProc));
+
+				//ImGui::SameLine();
+				//ImGui::Button("Any");
+
+#ifdef _WIN64
+				static int selectedARCH = 0 | ARCH_x64 | 0; // ARCH_UNKNOWN
+#else
+				static int selectedARCH = 0 | 0 | ARCH_x86; // ARCH_UNKNOWN
+#endif
+
+				static const std::vector<int> arches = { ARCH_x64, ARCH_x86, ARCH_UNKNOWN };
+				static const std::vector<std::string> archNames = { "x64", "x86", "unknown" };
+
+				for (size_t i = 0; i < arches.size(); i++)
+				{
+					int arch = arches[i];
+					std::string name = archNames[i];
+
+					bool isSelected = (selectedARCH & arch) != 0;
+
+					//ImGui::PushStyleColor(ImGuiCol_Text, isSelected ? colors::white : colors::text * colors::darker* colors::darker);
+					ImGui::PushStyleColor(ImGuiCol_Button, isSelected ? colors::background* colors::lighter : colors::transparent);
+
+					ImGui::SameLine();
+					if (ImGui::Button(name.c_str()))
+					{
+						selectedARCH ^= arch;
+					}
+					ImGui::PopStyleColor();
+				}
+
+				/*ImGui::SameLine();
+				if (ImGui::Button("x64"))
+				{
+					selectedARCH ^= ARCH_x64;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("x86"))
+				{
+					selectedARCH ^= ARCH_x86;
+				}
+				ImGui::SameLine();
+				if (ImGui::Button("unknown"))
+				{
+					selectedARCH ^= ARCH_UNKNOWN;
+				}*/
 				
 				ImGui::BeginChild(ENCSTR("ProcessesChild"));
 				{
@@ -161,7 +211,12 @@ void CRenderApp::RenderBody(const HWND& window)
 					ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0, 0.5f));
 					for (size_t i = 0; i < procList.size(); i++)
 					{
-						EString estr = "[" + EString((int)procList[i].pid) + "] " + procList[i].processName;
+						if ((selectedARCH & procList[i].arch) == 0)
+							continue;
+
+						EString procPid = "[" + EString((int)procList[i].pid) + "] ";
+						EString procArch = " [" + EString(procList[i].arch & ARCH_UNKNOWN ? "UNK" : (procList[i].arch & ARCH_x64 ? "x64" : "x86")) + "]";
+						EString estr = procPid + procList[i].processName + procArch;
 
 						bool isPushStyle = procList[i].pid == targetPid;
 
@@ -199,7 +254,7 @@ void CRenderApp::RenderBody(const HWND& window)
 				if (lastId != InjectQueueHandler::GetLastId())
 				{
 					lastId = InjectQueueHandler::GetLastId();
-					items::OpenNotify(ENCSTR("Client load"));
+					items::OpenNotify(ENCSTR("Library load"));
 					waitingToClose = true;
 				}
 				if (waitingToClose)
@@ -208,8 +263,8 @@ void CRenderApp::RenderBody(const HWND& window)
 					bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
 
 					EString text = finished ? (resultCode == 0 ?
-						ENCSTR("Client loaded successfully!\n ") :
-						EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
+						ENCSTR("Library loaded successfully!\n ") :
+						EString(ENCSTR("Unable to load library.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
 
 					auto lmFn = [&]()
 						{
@@ -231,8 +286,8 @@ void CRenderApp::RenderBody(const HWND& window)
 							return false;
 						};
 
-					//if (items::ShowNotify("Client load", text.c_str()))
-					if (items::ShowNotifyLm(ENCSTR("Client load"), text.c_str(), lmFn))
+					//if (items::ShowNotify("Library load", text.c_str()))
+					if (items::ShowNotifyLm(ENCSTR("Library load"), text.c_str(), lmFn))
 					{
 						waitingToClose = false;
 					}
@@ -243,7 +298,7 @@ void CRenderApp::RenderBody(const HWND& window)
 				//bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
 
 				//EString injectText = finished ? (resultCode == 0 ?
-				//ENCSTR("Client loaded successfully!\n ") :
+				//ENCSTR("Library loaded successfully!\n ") :
 				//EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
 
 				//if (waitingToClose)
@@ -259,6 +314,16 @@ void CRenderApp::RenderBody(const HWND& window)
 
 				std::string procName = CProcessManager::GetProcessByPid(InjectTarget::pid).processName;
 				ImGui::Text("Name:\n%s", procName.length() == 0 ? "None" : procName.c_str());
+
+				ImGui::NewLine();
+
+				bool isReady = strlen(InjectTarget::filePath) != 0 && InjectTarget::pid != 0 && procName.length() != 0;
+				ImVec4 readyColor = isReady ? colors::active : colors::activeRed;
+				ImGui::Text("Status: ");
+				ImGui::SameLine();
+				ImGui::PushStyleColor(ImGuiCol_Text, readyColor);
+				ImGui::Text(isReady ? "Ready" : "Not ready");
+				ImGui::PopStyleColor();
 
 				ImGui::PushFont(fonts::bold_20);
 				ImGui::SetCursorPosY(ImGui::GetCursorPosY() + ImGui::GetContentRegionAvail().y - 54);
@@ -310,7 +375,7 @@ void CRenderApp::RenderBody(const HWND& window)
 		//	if (lastId != InjectQueueHandler::GetLastId())
 		//	{
 		//		lastId = InjectQueueHandler::GetLastId();
-		//		items::OpenNotify(ENCSTR("Client load"));
+		//		items::OpenNotify(ENCSTR("Library load"));
 		//		waitingToClose = true;
 		//	}
 		//	if (waitingToClose)
@@ -319,7 +384,7 @@ void CRenderApp::RenderBody(const HWND& window)
 		//		bool finished = InjectQueueHandler::GetResult(InjectQueueHandler::GetLastId(), &resultCode);
 
 		//		EString text = finished ? (resultCode == 0 ?
-		//			ENCSTR("Client loaded successfully!\n ") :
+		//			ENCSTR("Library loaded successfully!\n ") :
 		//			EString(ENCSTR("Unable to load client.\nError code: ")) + CInjector::ReturnCodeToStr(resultCode)) : ENCSTR("Loading...\n ");
 
 		//		auto lmFn = [&]()
@@ -342,8 +407,8 @@ void CRenderApp::RenderBody(const HWND& window)
 		//				return false;
 		//			};
 
-		//		//if (items::ShowNotify("Client load", text.c_str()))
-		//		if (items::ShowNotifyLm(ENCSTR("Client load"), text.c_str(), lmFn))
+		//		//if (items::ShowNotify("Library load", text.c_str()))
+		//		if (items::ShowNotifyLm(ENCSTR("Library load"), text.c_str(), lmFn))
 		//		{
 		//			waitingToClose = false;
 		//		}

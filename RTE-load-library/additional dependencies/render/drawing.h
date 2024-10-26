@@ -44,6 +44,7 @@ struct colors
 	static constexpr ImVec4 lessOpaque = ImVec4(1.f, 1.f, 1.f, 0.9f);
 
 	static constexpr ImVec4 active = ImVec4(0.41f, 0.6f, 0.9f, 1);
+	static constexpr ImVec4 activeRed = ImVec4(1, 0.3f, 0.3f, 0.8f);
 	static constexpr ImVec4 activeDark = ImVec4(0.1f, 0.17f, 0.27f, 1);
 	static constexpr ImVec4 white = ImVec4(1, 1, 1, 1);
 	static constexpr ImVec4 black = ImVec4(0, 0, 0, 1);

@@ -196,6 +196,11 @@ int CInjector::InjectDllByPid(DWORD PID, const char* dllPath)
 	return 0;
 }
 
+int CInjector::UnloadDll(DWORD PID, const char* dllName)
+{
+	return 0;
+}
+
 //int CInjector::InjectDllByProcName(const char* processName, const char* dllPath)
 //{
 //	std::string dllPathStr = dllPath;

@@ -1,10 +1,18 @@
 #pragma once
 #include <base.h>
 
+enum ARCH : int
+{
+	ARCH_UNKNOWN	= (1 << 0),
+	ARCH_x86		= (1 << 1),
+	ARCH_x64		= (1 << 2),
+};
+
 struct ProcessInfo_t
 {
 	DWORD pid;
 	EString processName;
+	ARCH arch;
 };
 
 class CProcessManager

@@ -15,6 +15,7 @@ struct CInjector
 
 	static bool IsDllInjected(DWORD PID, const char* dllPath);
 	static int InjectDllByPid(DWORD PID, const char* dllPath);
+	static int UnloadDll(DWORD PID, const char* dllName);
 	//static int InjectDllByProcName(const char* processName, const char* dllPath);
 };
 
