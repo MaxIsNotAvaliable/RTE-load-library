@@ -38,28 +38,50 @@ struct fonts
 
 struct colors
 {
+	// ћножители (оставл€ем как было, используютс€ в SetupStyle)
 	static constexpr ImVec4 darker = ImVec4(0.9f, 0.9f, 0.9f, 1);
 	static constexpr ImVec4 lighter = ImVec4(1.1f, 1.1f, 1.1f, 1);
 	static constexpr ImVec4 moreOpaque = ImVec4(1.f, 1.f, 1.f, 1.1f);
 	static constexpr ImVec4 lessOpaque = ImVec4(1.f, 1.f, 1.f, 0.9f);
 
-	static constexpr ImVec4 active = ImVec4(0.41f, 0.6f, 0.9f, 1);
-	static constexpr ImVec4 activeRed = ImVec4(1, 0.3f, 0.3f, 0.8f);
-	static constexpr ImVec4 activeDark = ImVec4(0.1f, 0.17f, 0.27f, 1);
+	// Ѕазовые
 	static constexpr ImVec4 white = ImVec4(1, 1, 1, 1);
 	static constexpr ImVec4 black = ImVec4(0, 0, 0, 1);
 	static constexpr ImVec4 transparent = ImVec4(0.0f, 0.0f, 0.0f, 0.0f);
 
-	static constexpr ImVec4 background = ImVec4(0.16f, 0.16f, 0.16f, 1);
-	static constexpr ImVec4 backgroundPopUp = ImVec4(0.12f, 0.12f, 0.12f, 1);
+	// јкцент Ч синий, с полным набором состо€ний
+	static constexpr ImVec4 active = ImVec4(0.36f, 0.56f, 0.96f, 1);
+	static constexpr ImVec4 activeHover = ImVec4(0.46f, 0.66f, 1.00f, 1);
+	static constexpr ImVec4 activePressed = ImVec4(0.28f, 0.48f, 0.88f, 1);
+	static constexpr ImVec4 activeDark = ImVec4(0.16f, 0.24f, 0.42f, 1);  // bg дл€ selected
 
-	static constexpr ImVec4 text = ImVec4(0.83f, 0.83f, 0.83f, 1);
+	// —емантические Ч с фоновыми ЂтЄмнымиї верси€ми дл€ чипов
+	static constexpr ImVec4 success = ImVec4(0.35f, 0.82f, 0.52f, 1);
+	static constexpr ImVec4 successDark = ImVec4(0.13f, 0.32f, 0.21f, 1);
+	static constexpr ImVec4 activeRed = ImVec4(0.95f, 0.38f, 0.42f, 1);
+	static constexpr ImVec4 dangerDark = ImVec4(0.36f, 0.14f, 0.18f, 1);
 
-	static constexpr ImVec4 frame = ImVec4(0.03f, 0.03f, 0.03f, 0.4f);
-	static constexpr ImVec4 frameHovered = ImVec4(0.19f, 0.19f, 0.19f, 1);
-	static constexpr ImVec4 frameActive = ImVec4(0.22f, 0.22f, 0.22f, 1);
+	// ‘оны Ч 4 уровн€ глубины
+	static constexpr ImVec4 background = ImVec4(0.08f, 0.08f, 0.10f, 1);  // корень
+	static constexpr ImVec4 backgroundPopUp = ImVec4(0.12f, 0.12f, 0.15f, 1);  // карточки
+	static constexpr ImVec4 surface = ImVec4(0.16f, 0.16f, 0.20f, 1);  // raised
+	static constexpr ImVec4 surfaceHover = ImVec4(0.21f, 0.21f, 0.26f, 1);
+	static constexpr ImVec4 surfaceActive = ImVec4(0.25f, 0.25f, 0.31f, 1);
+
+	// Ѕордеры (alpha!) Ч дл€ Ђприподн€тыхї панелей
+	static constexpr ImVec4 border = ImVec4(1, 1, 1, 0.06f);
+	static constexpr ImVec4 borderStrong = ImVec4(1, 1, 1, 0.12f);
+
+	// “екст Ч 3 уровн€
+	static constexpr ImVec4 text = ImVec4(0.92f, 0.92f, 0.95f, 1);  // основной
+	static constexpr ImVec4 textMuted = ImVec4(0.58f, 0.58f, 0.64f, 1);  // лейблы
+	static constexpr ImVec4 textDim = ImVec4(0.42f, 0.42f, 0.48f, 1);  // неактивное
+
+	// Frames (инпуты)
+	static constexpr ImVec4 frame = ImVec4(0.06f, 0.06f, 0.08f, 1);
+	static constexpr ImVec4 frameHovered = ImVec4(0.20f, 0.20f, 0.25f, 1);
+	static constexpr ImVec4 frameActive = ImVec4(0.24f, 0.24f, 0.30f, 1);
 };
-
 namespace tools
 {
 	static ImVec2 CalcItemSize(const char* text, ImVec2 size_arg = ImVec2())
@@ -339,43 +361,79 @@ namespace items
 		ImGui::OpenPopup(title);
 	}
 
-	bool ShowNotify(const char* title, const char* label, bool *outResult = nullptr)
+	bool ShowNotify(const char* title, const char* label, bool* outResult = nullptr)
 	{
 		ImVec2 center = ImGui::GetMainViewport()->GetCenter();
 		ImGui::SetNextWindowPos(center, 0, ImVec2(0.5f, 0.5f));
 		bool pressed = false;
 
+		ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.55f));
+
+		ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.10f, 0.10f, 0.12f, 0.97f));
+		ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 24));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
 		ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.1f);
+
 		if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
 		{
-			ImGui::PushFont(fonts::bold_16);
-			ImGui::TextColored(colors::white, title);
+			ImGui::PushFont(fonts::bold_20);
+			ImGui::TextColored(ImVec4(1, 1, 1, 1), title);
 			ImGui::PopFont();
 
-			ImGui::Text(label);
-			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0, 4));
 
-			// --
-			if (ImGui::Button("OK", ImVec2(120, 0)))
+			ImGui::PushStyleColor(ImGuiCol_Text, colors::text);
+			ImGui::TextWrapped("%s", label);
+			ImGui::PopStyleColor();
+
+			ImGui::Dummy(ImVec2(0, 8));
+
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16, 8));
+
+			ImGui::PushStyleColor(ImGuiCol_Button, colors::active);
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::activeHover);
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::activePressed);
+			if (ImGui::Button("OK", ImVec2(100, 0)))
 			{
 				ImGui::CloseCurrentPopup();
 				pressed = true;
 				if (outResult) *outResult = true;
 			}
+			ImGui::PopStyleColor(3);
 
 			ImGui::SetItemDefaultFocus();
 			ImGui::SameLine();
 
-			if (ImGui::Button("Cancel", ImVec2(120, 0)))
+			ImGui::PushStyleColor(ImGuiCol_Button, colors::surface);
+			ImGui::PushStyleColor(ImGuiCol_ButtonHovered, colors::surfaceHover);
+			ImGui::PushStyleColor(ImGuiCol_ButtonActive, colors::surfaceActive);
+			ImGui::PushStyleColor(ImGuiCol_Text, colors::text);
+			if (ImGui::Button("Cancel", ImVec2(100, 0)))
 			{
 				ImGui::CloseCurrentPopup();
 				pressed = true;
 				if (outResult) *outResult = false;
 			}
-			// --
+			ImGui::PopStyleColor(4);
+
+			ImGui::PopStyleVar(2);
+
+			if (ImGui::IsMouseClicked(0) && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup))
+			{
+				ImGui::CloseCurrentPopup();
+				if (outResult) *outResult = false;
+			}
+
 			ImGui::EndPopup();
 		}
-		ImGui::PopStyleVar();
+
+		ImGui::PopStyleVar(4); 
+		ImGui::PopStyleColor(3); 
+
 		return pressed;
 	}
 
@@ -385,95 +443,48 @@ namespace items
 		ImGui::SetNextWindowPos(center, 0, ImVec2(0.5f, 0.5f));
 		bool pressed = false;
 
+		ImGui::PushStyleColor(ImGuiCol_ModalWindowDimBg, ImVec4(0.0f, 0.0f, 0.0f, 0.0f));
+		ImGui::PushStyleColor(ImGuiCol_PopupBg, ImVec4(0.10f, 0.10f, 0.12f, 0.97f));
+		ImGui::PushStyleColor(ImGuiCol_Border, ImVec4(1.0f, 1.0f, 1.0f, 0.25f));
+
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowRounding, 14.0f);
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowPadding, ImVec2(24, 24));
+		ImGui::PushStyleVar(ImGuiStyleVar_WindowBorderSize, 1.0f);
 		ImGui::PushStyleVar(ImGuiStyleVar_ScrollbarSize, 0.1f);
+
 		if (ImGui::BeginPopupModal(title, NULL, ImGuiWindowFlags_AlwaysAutoResize | ImGuiWindowFlags_NoTitleBar))
 		{
-			ImGui::PushFont(fonts::bold_16);
-			ImGui::TextColored(colors::white, title);
+			ImGui::PushFont(fonts::bold_20);
+			ImGui::TextColored(ImVec4(1, 1, 1, 1), title);
 			ImGui::PopFont();
 
-			ImGui::Text(label);
-			ImGui::Separator();
+			ImGui::Dummy(ImVec2(0, 4));
+
+			ImGui::PushStyleColor(ImGuiCol_Text, colors::text);
+			ImGui::TextWrapped("%s", label);
+			ImGui::PopStyleColor();
+
+			ImGui::Dummy(ImVec2(0, 8));
+
+			ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 6.0f);
+			ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(16, 8));
 
 			pressed = fnDesign();
 
+			ImGui::PopStyleVar(2); 
+
+			if (ImGui::IsMouseClicked(0) && !ImGui::IsWindowHovered(ImGuiHoveredFlags_AllowWhenBlockedByPopup))
+			{
+				ImGui::CloseCurrentPopup();
+			}
+
 			ImGui::EndPopup();
 		}
-		ImGui::PopStyleVar();
+
+		ImGui::PopStyleVar(4);
+		ImGui::PopStyleColor(3);
+
 		return pressed;
-	}
-
-	static void ShowExampleMenuFile(bool* pOpen)
-	{
-		ImGui::MenuItem("(demo menu)", NULL, pOpen, false);
-		if (ImGui::MenuItem("New")) {}
-		if (ImGui::MenuItem("Open", "Ctrl+O")) {}
-		if (ImGui::BeginMenu("Open Recent"))
-		{
-			ImGui::MenuItem("fish_hat.c");
-			ImGui::MenuItem("fish_hat.inl");
-			ImGui::MenuItem("fish_hat.h");
-			if (ImGui::BeginMenu("More.."))
-			{
-				ImGui::MenuItem("Hello");
-				ImGui::MenuItem("Sailor");
-				if (ImGui::BeginMenu("Recurse.."))
-				{
-					ShowExampleMenuFile(pOpen);
-					ImGui::EndMenu();
-				}
-				ImGui::EndMenu();
-			}
-			ImGui::EndMenu();
-		}
-		if (ImGui::MenuItem("Save", "Ctrl+S")) {}
-		if (ImGui::MenuItem("Save As..")) {}
-
-		ImGui::Separator();
-		if (ImGui::BeginMenu("Options"))
-		{
-			static bool enabled = true;
-			ImGui::MenuItem("Enabled", "", &enabled);
-			ImGui::BeginChild("child", ImVec2(0, 60), true);
-			for (int i = 0; i < 10; i++)
-				ImGui::Text("Scrolling Text %d", i);
-			ImGui::EndChild();
-			static float f = 0.5f;
-			static int n = 0;
-			ImGui::SliderFloat("Value", &f, 0.0f, 1.0f);
-			ImGui::InputFloat("Input", &f, 0.1f);
-			ImGui::Combo("Combo", &n, "Yes\0No\0Maybe\0\0");
-			ImGui::EndMenu();
-		}
-
-		if (ImGui::BeginMenu("Colors"))
-		{
-			float sz = ImGui::GetTextLineHeight();
-			for (int i = 0; i < ImGuiCol_COUNT; i++)
-			{
-				const char* name = ImGui::GetStyleColorName((ImGuiCol)i);
-				ImVec2 p = ImGui::GetCursorScreenPos();
-				ImGui::GetWindowDrawList()->AddRectFilled(p, ImVec2(p.x + sz, p.y + sz), ImGui::GetColorU32((ImGuiCol)i));
-				ImGui::Dummy(ImVec2(sz, sz));
-				ImGui::SameLine();
-				ImGui::MenuItem(name);
-			}
-			ImGui::EndMenu();
-		}
-
-		if (ImGui::BeginMenu("Options")) // <-- Append!
-		{
-			static bool b = true;
-			ImGui::Checkbox("SomeOption", &b);
-			ImGui::EndMenu();
-		}
-
-		if (ImGui::BeginMenu("Disabled", false)) // Disabled
-		{
-			IM_ASSERT(0);
-		}
-		if (ImGui::MenuItem("Checked", NULL, true)) {}
-		if (ImGui::MenuItem("Quit", "Alt+F4")) {}
 	}
 }
 

@@ -16,6 +16,8 @@ private:
 	void SetupStyle();
 	void InitializeImGui();
 
+	void RenderBodyDND(float animationValue, float animationDNDValue, const ImVec2& windowPos, const ImVec2& windowSize);
+
 public:
 	Animation show_animation = Animation(0.25f);
 	POINTS position = {};
