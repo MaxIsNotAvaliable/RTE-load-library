@@ -8,6 +8,7 @@
 #include <tchar.h>
 #include <string>
 
+#pragma comment(lib, "psapi.lib")
 
 struct CInjector
 {

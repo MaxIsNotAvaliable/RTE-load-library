@@ -133,67 +133,201 @@ bool CInjector::IsDllInjected(DWORD PID, const char* dllPath)
 
 int CInjector::InjectDllByPid(DWORD PID, const char* dllPath)
 {
-	if (IsDllInjected(PID, dllPath))
-		return 1;
+    if (IsDllInjected(PID, dllPath))
+        return 1;
 
-	std::string dllPathStr = dllPath;
-	if (std::filesystem::path(dllPathStr).is_relative())
-		dllPathStr = manage_files::GetFolder() + "\\" + dllPath;
+    // ---------- нормализация пути ----------
+    std::filesystem::path path = dllPath;
+    if (path.is_relative())
+        path = std::filesystem::path(manage_files::GetFolder()) / path;
+    path = path.lexically_normal();
 
-	if (!manage_files::fileExists(dllPathStr))
-		return 2;
+    if (!manage_files::fileExists(path.string()))
+        return 2;
 
-	const TCHAR* dll_path = dllPathStr.c_str();
-	auto len = _tcsclen(dll_path) * sizeof(TCHAR*);
-	HANDLE h_proc = OpenProcess(PROCESS_ALL_ACCESS, FALSE, PID);
+#ifdef UNICODE
+    std::wstring pathStr = path.wstring();
+#else
+    std::string  pathStr = path.string();
+#endif
+    const TCHAR* dll_path = pathStr.c_str();
+    SIZE_T len = (_tcslen(dll_path) + 1) * sizeof(TCHAR);
 
-	if (!h_proc || h_proc == INVALID_HANDLE_VALUE)
-		return 3;
+    // ---------- открытие процесса ----------
+    HANDLE h_proc = OpenProcess(
+        PROCESS_CREATE_THREAD | PROCESS_QUERY_INFORMATION |
+        PROCESS_VM_OPERATION | PROCESS_VM_WRITE | PROCESS_VM_READ,
+        FALSE, PID);
+    if (!h_proc)
+        return 3;
 
-	const LPVOID nt_open_file = GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), ENCSTR("NtOpenFile"));
-	if (nt_open_file)
-	{
-		char original_bytes[5];
-		memcpy(original_bytes, nt_open_file, 5);
-		WriteProcessMemory(h_proc, nt_open_file, original_bytes, 5, nullptr);
-	}
+    // ---------- разрядность цели ----------
+    BOOL isWow64 = FALSE;
+    if (!IsWow64Process(h_proc, &isWow64))
+    {
+        CloseHandle(h_proc);
+        return 3;
+    }
 
-	auto* loc = VirtualAllocEx(h_proc, nullptr, MAX_PATH, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
-	if (!loc)
-	{
-		CloseHandle(h_proc);
-		return 4;
-	}
+#ifdef _WIN64
+    const bool injectorIs64 = true;
+#else
+    const bool injectorIs64 = false;
+#endif
 
-	if (!WriteProcessMemory(h_proc, loc, dll_path, len, nullptr))
-	{
-		VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
-		CloseHandle(h_proc);
-		return 5;
-	}
+    // x86-инжектор не может напрямую работать с нативным x64-процессом.
+    // (Нужна отдельная техника вроде Heaven's Gate - вне рамок этой функции.)
+    if (!injectorIs64 && !isWow64)
+    {
+        CloseHandle(h_proc);
+        return 10;
+    }
 
-	f_Routine* pLoadLibrary = reinterpret_cast<f_Routine*>(GetProcAddressEx(h_proc, TEXT("kernel32.dll"), LOAD_LIBRARY_NAME));
-	f_NtCreateThreadEx p_NtCreateThreadEx = (f_NtCreateThreadEx)(GetProcAddress(GetModuleHandle(TEXT("ntdll.dll")), ENCSTR("NtCreateThreadEx")));
+    // =======================================================================
+    // ВЕТКА A: WOW64 (x64 инжектор -> x86 target)
+    // =======================================================================
+    if (injectorIs64 && isWow64)
+    {
+        void* pLoadLibrary = GetProcAddressEx(h_proc, TEXT("kernel32.dll"), "LoadLibraryA");
+        if (!pLoadLibrary)
+        {
+            CloseHandle(h_proc);
+            return 11;
+        }
 
-	if (!pLoadLibrary || !p_NtCreateThreadEx)
-	{
-		VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
-		CloseHandle(h_proc);
-		return 6;
-	}
+        f_NtCreateThreadEx pNtCreateThreadEx = reinterpret_cast<f_NtCreateThreadEx>(
+            GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtCreateThreadEx"));
+        if (!pNtCreateThreadEx)
+        {
+            CloseHandle(h_proc);
+            return 6;
+        }
 
-	HANDLE h_thread = nullptr;
-	NTSTATUS ntRet = p_NtCreateThreadEx(&h_thread, THREAD_ALL_ACCESS, nullptr, h_proc, pLoadLibrary, loc, 0, 0, 0, 0, nullptr);
-	if (ntRet < 0 || !h_thread)
-	{
-		VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
-		CloseHandle(h_proc);
-		return 7;
-	}
+        LPVOID loc = VirtualAllocEx(h_proc, nullptr, len,
+            MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+        if (!loc || (ULONG_PTR)loc > 0xFFFFFFFF)
+        {
+            if (loc) VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+            loc = VirtualAllocEx(h_proc, (LPVOID)0x10000000, len,
+                MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+            if (!loc || (ULONG_PTR)loc > 0xFFFFFFFF)
+            {
+                if (loc) VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+                CloseHandle(h_proc);
+                return 4;
+            }
+        }
 
-	CloseHandle(h_thread);
-	CloseHandle(h_proc);
-	return 0;
+        if (!WriteProcessMemory(h_proc, loc, dll_path, len, nullptr))
+        {
+            VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+            CloseHandle(h_proc);
+            return 5;
+        }
+
+        HANDLE h_thread = nullptr;
+        NTSTATUS ntRet = pNtCreateThreadEx(&h_thread, THREAD_ALL_ACCESS, nullptr,
+            h_proc, pLoadLibrary, loc,
+            0, 0, 0, 0, nullptr);
+        if (ntRet < 0 || !h_thread)
+        {
+            VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+            CloseHandle(h_proc);
+            return 7;
+        }
+
+        DWORD wait = WaitForSingleObject(h_thread, 10000);
+        DWORD exitCode = 0;
+        GetExitCodeThread(h_thread, &exitCode); // младших 32 бит HMODULE достаточно
+
+        CloseHandle(h_thread);
+        VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+        CloseHandle(h_proc);
+
+        if (wait != WAIT_OBJECT_0)
+            return 9;
+        return exitCode != 0 ? 0 : 8;
+    }
+
+    // =======================================================================
+    // ВЕТКА B: штатный путь (x64->x64 или x86->x86)
+    // =======================================================================
+    HMODULE h_ntdll_local = GetModuleHandleA("ntdll.dll");
+    if (h_ntdll_local)
+    {
+        LPVOID local_nt_open = GetProcAddress(h_ntdll_local, "NtOpenFile");
+        LPVOID remote_nt_open = GetProcAddressEx(h_proc, TEXT("ntdll.dll"), ENCSTR("NtOpenFile"));
+
+        if (local_nt_open && remote_nt_open)
+        {
+            BYTE clean[5];
+            memcpy(clean, local_nt_open, sizeof(clean));
+
+            DWORD oldProt = 0;
+            if (VirtualProtectEx(h_proc, remote_nt_open, sizeof(clean),
+                PAGE_EXECUTE_READWRITE, &oldProt))
+            {
+                SIZE_T written = 0;
+                if (WriteProcessMemory(h_proc, remote_nt_open, clean,
+                    sizeof(clean), &written) &&
+                    written == sizeof(clean))
+                {
+                    FlushInstructionCache(h_proc, remote_nt_open, sizeof(clean));
+                }
+                VirtualProtectEx(h_proc, remote_nt_open, sizeof(clean),
+                    oldProt, &oldProt);
+            }
+        }
+    }
+
+    LPVOID loc = VirtualAllocEx(h_proc, nullptr, len, MEM_COMMIT | MEM_RESERVE, PAGE_READWRITE);
+    if (!loc)
+    {
+        CloseHandle(h_proc);
+        return 4;
+    }
+
+    if (!WriteProcessMemory(h_proc, loc, dll_path, len, nullptr))
+    {
+        VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+        CloseHandle(h_proc);
+        return 5;
+    }
+
+    f_Routine* pLoadLibrary = reinterpret_cast<f_Routine*>(
+        GetProcAddressEx(h_proc, TEXT("kernel32.dll"), LOAD_LIBRARY_NAME));
+    f_NtCreateThreadEx pNtCreateThreadEx = reinterpret_cast<f_NtCreateThreadEx>(
+        GetProcAddress(GetModuleHandleA("ntdll.dll"), "NtCreateThreadEx"));
+
+    if (!pLoadLibrary || !pNtCreateThreadEx)
+    {
+        VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+        CloseHandle(h_proc);
+        return 6;
+    }
+
+    HANDLE h_thread = nullptr;
+    NTSTATUS ntRet = pNtCreateThreadEx(&h_thread, THREAD_ALL_ACCESS, nullptr,
+        h_proc, pLoadLibrary, loc,
+        0, 0, 0, 0, nullptr);
+    if (ntRet < 0 || !h_thread)
+    {
+        VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+        CloseHandle(h_proc);
+        return 7;
+    }
+
+    DWORD wait = WaitForSingleObject(h_thread, 10000);
+    DWORD exitCode = 0;
+    GetExitCodeThread(h_thread, &exitCode);
+
+    CloseHandle(h_thread);
+    VirtualFreeEx(h_proc, loc, 0, MEM_RELEASE);
+    CloseHandle(h_proc);
+
+    if (wait != WAIT_OBJECT_0)
+        return 9;
+    return exitCode != 0 ? 0 : 8;
 }
 
 int CInjector::UnloadDll(DWORD PID, const char* dllName)

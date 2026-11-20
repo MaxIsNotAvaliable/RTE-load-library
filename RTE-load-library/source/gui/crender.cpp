@@ -62,7 +62,7 @@ void CRenderApp::RenderBody(const HWND& window)
         ImGui::PushStyleColor(ImGuiCol_Button, colors::transparent);
 #ifdef _WIN64
         
-        ImGui::Button(ENCSTR("RTE-load-library x64"));
+        ImGui::Button(ENCSTR("RTE-load-library"));
 #else
         ImGui::Button(ENCSTR("RTE-load-library x86"));
 #endif
@@ -169,6 +169,11 @@ void CRenderApp::RenderBody(const HWND& window)
 
                 for (size_t i = 0; i < arches.size(); i++)
                 {
+#ifndef _WIN64
+                    if (i == 0) // x64 in x86 space
+                        continue;
+#endif
+
                     int arch = arches[i];
                     bool isSelected = (selectedARCH & arch) != 0;
 
@@ -221,25 +226,26 @@ void CRenderApp::RenderBody(const HWND& window)
                 ImGui::BeginChild(ENCSTR("ProcessesChild"), ImVec2(0, 0),
                     ImGuiChildFlags_AlwaysUseWindowPadding);
                 {
-                    auto procList = CProcessManager::GetProcessList(bufProc);
+                    auto test = CProcessManager::GetProcessList(bufProc, selectedARCH);
+                    auto procList = test.get();
                     static DWORD targetPid = 0;
 
                     ImGui::PushStyleVar(ImGuiStyleVar_ButtonTextAlign, ImVec2(0.02f, 0.5f));
                     ImGui::PushStyleVar(ImGuiStyleVar_FrameRounding, 4.0f);
                     ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(10, 8));
 
-                    for (size_t i = 0; i < procList.size(); i++)
+                    for (size_t i = 0; i < procList->size(); i++)
                     {
-                        if ((selectedARCH & procList[i].arch) == 0)
-                            continue;
+                        //if ((selectedARCH & procList[i].arch) == 0)
+                        //    continue;
 
-                        EString procPid = "[" + EString((int)procList[i].pid) + "] ";
+                        EString procPid = "[" + EString((int)procList->at(i).pid) + "] ";
                         EString procArch = "  [" + EString(
-                            procList[i].arch & ARCH_UNKNOWN ? "UNK" :
-                            (procList[i].arch & ARCH_x64 ? "x64" : "x86")) + "]";
-                        EString estr = procPid + procList[i].processName + procArch;
+                            procList->at(i).arch & ARCH_UNKNOWN ? "UNK" :
+                            (procList->at(i).arch & ARCH_x64 ? "x64" : "x86")) + "]";
+                        EString estr = procPid + procList->at(i).processName + procArch;
 
-                        bool isSelected = procList[i].pid == targetPid;
+                        bool isSelected = procList->at(i).pid == targetPid;
 
                         ImGui::PushID((int)i);
                         if (isSelected)
@@ -259,7 +265,7 @@ void CRenderApp::RenderBody(const HWND& window)
 
                         if (ImGui::Button(estr.c_str(), ImVec2(ImGui::GetContentRegionAvail().x, 0)))
                         {
-                            targetPid = procList[i].pid;
+                            targetPid = procList->at(i).pid;
                             InjectTarget::pid = targetPid;
                         }
 
@@ -349,6 +355,7 @@ void CRenderApp::RenderBody(const HWND& window)
                     ImGui::PushStyleColor(ImGuiCol_Text, valColor);
                     ImGui::TextWrapped("%s", value);
                     ImGui::PopStyleColor();
+
                     ImGui::Dummy(ImVec2(0, 6));
                     };
 
@@ -359,13 +366,14 @@ void CRenderApp::RenderBody(const HWND& window)
                     strlen(InjectTarget::filePath) == 0 ? colors::textDim : colors::text);
 
                 std::string pidStr = InjectTarget::pid == 0
-                    ? "—" : std::to_string(InjectTarget::pid);
+                    ? "None" : std::to_string(InjectTarget::pid);
                 infoBlock("PID", pidStr.c_str(),
                     InjectTarget::pid == 0 ? colors::textDim : colors::text);
 
-                std::string procName = CProcessManager::GetProcessByPid(InjectTarget::pid).processName;
-                infoBlock("PROCESS", procName.empty() ? "None" : procName.c_str(),
-                    procName.empty() ? colors::textDim : colors::text);
+                auto targetProc = CProcessManager::GetProcessByPid(InjectTarget::pid);
+
+                std::string procName = targetProc.has_value() ? targetProc.value().processName : std::string({});
+                infoBlock("PROCESS", targetProc.has_value() ? procName.c_str() : "None", targetProc.has_value() ? colors::text : colors::textDim);
 
                 // --- status chip ---
                 const bool isReady = strlen(InjectTarget::filePath) != 0

@@ -101,9 +101,6 @@
     <ClInclude Include="source\injector\ptinfo.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>
-    <ClInclude Include="source\injector\RTEHijacker.h">
-      <Filter>Файлы заголовков</Filter>
-    </ClInclude>
     <ClInclude Include="additional dependencies\anime\animation.h">
       <Filter>Файлы заголовков</Filter>
     </ClInclude>

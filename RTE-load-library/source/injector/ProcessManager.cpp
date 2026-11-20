@@ -1,5 +1,8 @@
 #include "ProcessManager.h"
 #include <tlhelp32.h>
+#include <algorithm>
+#include <iterator>
+#include <ranges>
 
 bool IsProcess64Bit(HANDLE hProcess) {
     BOOL isWow64 = FALSE;
@@ -48,28 +51,69 @@ void CProcessManager::UpdateProcessList()
     } while (Process32Next(hProcessSnap, &pe32));
 
     CloseHandle(hProcessSnap);
-    processList = processes;
+    processSnapshot.publish(std::move(processes));
+    //processList = processes;
 }
 
-std::vector<ProcessInfo_t> CProcessManager::GetProcessList(const std::string& filterByName)
+std::shared_ptr<const std::vector<ProcessInfo_t>> CProcessManager::GetProcessList(const std::string& filterByName, int filterByArchitecture)
 {
-    if (filterByName[0] == '\0')
-        return processList;
+    //auto lmFilter = [&](const ProcessInfo_t& ms)
+    //    {
+    //        if ((ms.arch & filterByArchitecture) == 0)
+    //            return false;
 
-    std::vector<ProcessInfo_t> filteredProcesses;
+    //        if (ms.processName.ToLowerCase().find(filterByName) != std::string::npos) // contains part name
+    //            return true;
 
-    auto lmFilter = [&](const ProcessInfo_t& ms) 
-        { 
-            return ms.processName.ToLowerCase().find(filterByName) != std::string::npos || EString(ms.pid).find(filterByName) != EString::npos;
-        };
+    //        if (EString(ms.pid).find(filterByName) != EString::npos) // contains PID in searchbar
+    //            return true;
 
-    std::copy_if(processList.begin(), processList.end(), std::back_inserter(filteredProcesses), lmFilter);
+    //        return false;
+    //    };
 
-	return filteredProcesses;
+    auto snap = processSnapshot.latest();
+    if (!snap) return nullptr;
+
+    if (filterByName.empty() && filterByArchitecture == ARCH_ANY)
+        return snap;
+
+    //const bool hasName = !filterByName.empty();
+
+    std::string needle = filterByName;
+    std::transform(needle.begin(), needle.end(), needle.begin(), [](unsigned char c) {return (char)std::tolower(c); });
+
+
+    auto out = std::make_shared<std::vector<ProcessInfo_t>>();
+    out->reserve(snap->size() / 2 + 1);
+
+    for (const auto& p : *snap)
+    {
+        if ((p.arch & filterByArchitecture) == 0) continue;
+
+        if (p.processName.ToLowerCase().find(needle) != std::string::npos)
+        {
+            out->push_back(p);
+            continue;
+        }
+        if (EString(p.pid).find(filterByName) != EString::npos)
+        {
+            out->push_back(p);
+            continue;
+        }
+    }
+
+    return out;
 }
 
-ProcessInfo_t CProcessManager::GetProcessByPid(DWORD pid)
+std::optional<ProcessInfo_t> CProcessManager::GetProcessByPid(DWORD pid)
 {
+    auto snap = processSnapshot.latest();
+    if (!snap) return std::nullopt;
+
+    auto it = std::find_if(snap->begin(), snap->end(), [pid](const ProcessInfo_t& p) { return p.pid == pid; });
+    if (it == snap->end()) return std::nullopt;
+    return *it;
+
     /*size_t left, right, mid = 0;
 
     left = 0;
@@ -92,11 +136,11 @@ ProcessInfo_t CProcessManager::GetProcessByPid(DWORD pid)
         }
     }*/
 
-    for (size_t i = 0; i < processList.size(); i++)
+    /*for (size_t i = 0; i < processList.size(); i++)
     {
         if (processList[i].pid == pid)
             return processList[i];
     }
 
-    return ProcessInfo_t();
+    return ProcessInfo_t();*/
 }

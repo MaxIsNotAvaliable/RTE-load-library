@@ -183,7 +183,7 @@ GUI вызывает `InjectQueueHandler::AddToQueue(pid, path)` и опраши
 ### Команды
 
 ```bash
-git clone --recursive <repo-url>
+git clone --recursive https://github.com/MaxIsNotAvaliable/RTE-load-library
 cd rte-load-library
 # Откройте .sln в Visual Studio и соберите конфигурацию Release x64/x86
 ```

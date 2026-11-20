@@ -1,5 +1,4 @@
 #include "injector/injector.h"
-#include "injector/RTEHijacker.h"
 #include "gui/crender.h"
 
 #include "dnd.h"
